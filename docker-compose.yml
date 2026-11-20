@@ -1,0 +1,36 @@
+# One command to run everything:  docker compose up --build
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: shortener
+      POSTGRES_USER: shortener
+      POSTGRES_PASSWORD: shortener   # local-dev only; real deployments inject a secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shortener -d shortener"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy   # don't start until the DB accepts connections
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/shortener
+      DB_USER: shortener
+      DB_PASSWORD: shortener
+      APP_BASE_URL: http://localhost:8080
+      # JSON (Elastic Common Schema) logs in containers; human-readable logs when run locally.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+    ports:
+      - "8080:8080"
+    stop_grace_period: 30s           # > server graceful-shutdown timeout (20s)
+
+volumes:
+  pgdata:

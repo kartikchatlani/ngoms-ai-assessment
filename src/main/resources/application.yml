@@ -1,0 +1,47 @@
+# Every setting that differs per environment is an env var with a local-dev default.
+spring:
+  application:
+    name: url-shortener
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/shortener}
+    username: ${DB_USER:shortener}
+    password: ${DB_PASSWORD:shortener}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Fail fast (3s) rather than letting requests pile up behind a dead database.
+      connection-timeout: 3000
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    # Graceful shutdown: stop accepting, let in-flight requests finish (up to 20s).
+    timeout-per-shutdown-phase: 20s
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      # /actuator/health/liveness and /actuator/health/readiness for orchestrators.
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        # Readiness includes the DB: no DB = stop sending us traffic.
+        # Liveness deliberately does NOT: restarting the app cannot fix a DB outage, and
+        # restart storms would make recovery worse.
+        readiness:
+          include: readinessState,db
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+  code-length: ${APP_CODE_LENGTH:7}
+  code-max-attempts: 5
+  max-url-length: 2048
+  max-page-size: 100
