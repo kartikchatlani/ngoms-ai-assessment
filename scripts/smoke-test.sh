@@ -31,6 +31,18 @@ check "get link returns 200"            200 "$(status "$BASE/api/v1/links/$code"
 check "redirect returns 302"            302 "$(status "$BASE/$code")"
 loc=$(curl -s -o /dev/null -w '%{redirect_url}' "$BASE/$code")
 check "redirect Location is the long URL" "https://example.com/smoke?x=1" "$loc"
+check "HEAD redirect returns 302"       302 "$(status -I "$BASE/$code")"
+
+# Analytics (Phase 2): the two GET redirects above count, the HEAD does not. Clicks are written
+# asynchronously (normally within milliseconds), so poll briefly instead of assuming.
+clicks=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  clicks=$(curl -s "$BASE/api/v1/links/$code/stats" | sed -n 's/.*"totalClicks":\([0-9]*\).*/\1/p')
+  [ "$clicks" = "2" ] && break
+  sleep 0.5
+done
+check "stats count GET redirects only"  2   "$clicks"
+check "stats with bad days returns 400" 400 "$(status "$BASE/api/v1/links/$code/stats?days=0")"
 
 out=$(create "{\"url\":\"https://example.com\",\"alias\":\"$ALIAS\"}")
 check "custom alias returns 201"        201 "$(printf '%s' "$out" | tail -n1)"

@@ -4,6 +4,52 @@ All notable changes, newest first. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). Each entry links to the decisions (ADRs), bugs and
 scenario docs behind it.
 
+## [0.2.0] Phase 2: Brownfield click analytics
+
+### Added
+- **Click capture** on every successful `GET /{code}`. It runs off the request path: a non-blocking
+  enqueue into a bounded buffer, then a background writer that batches inserts.
+  `HEAD`, 404 and 410 are not counted ([ADR-0006](docs/adr/0006-async-click-capture.md)).
+- **Schema** `V2__create_click_events.sql`: `click_events` table with a foreign key to `links`, an
+  `agent_class` `CHECK` and a `(link_id, clicked_at)` index. Expand-only, with
+  `lock_timeout` ([ADR-0007](docs/adr/0007-analytics-data-model-and-rollout.md)).
+- **Stats endpoint** `GET /api/v1/links/{code}/stats?days=N` (1–365, default 30): all-time total,
+  last click, zero-filled daily series (UTC), top 10 referrer hosts, clicks without a referrer, and
+  counts by client type (DESKTOP / MOBILE / BOT / UNKNOWN).
+- **Privacy by design:** no IP addresses or raw User-Agents are stored. Referrers are reduced to their host.
+- **Operability:** metrics `shortener.clicks{outcome=recorded|dropped_buffer_full|dropped_write_failed}`
+  and the gauge `shortener.clicks.pending`; kill switch `APP_ANALYTICS_ENABLED`; buffer size
+  `APP_ANALYTICS_BUFFER_CAPACITY`. Clicks are flushed on graceful shutdown.
+- **Benchmark** `scripts/RedirectBench.java`: redirect latency percentiles and throughput. Runs
+  with a plain JDK 21, no build needed.
+- **Tests:** +46 unit, +6 web-slice, +8 integration, including V1→V2 upgrade of a populated database
+  and rollback compatibility (`MigrationUpgradeTest`). The smoke test now has 18 checks (adds HEAD and stats).
+- **Docs:** ADR-0006 and ADR-0007, [brownfield scenario](docs/scenarios/02-brownfield.md);
+  architecture, testing and limitations docs updated to Phase 2; IMP-015 to IMP-021.
+
+### Changed
+- `RedirectController` records clicks. Its HTTP behaviour (status, headers) is unchanged.
+- `ApiWebTest` gained a `ClickRecorder` mock (wiring only; no assertions changed) and 3 new tests.
+- No existing endpoint, response field or `links` column changed.
+
+### Fixed
+- [BUG-002](docs/BUGS.md#bug-002): the JDK HTTP client's User-Agent was classified as DESKTOP
+  instead of BOT (found before release).
+
+### Verified
+- `./mvnw test` with Docker running: **159/159 tests pass, 0 skipped**. The Phase 1 suite also
+  passed against the new code before any new test was written, apart from the wiring fix above.
+- **In-place upgrade** of the running Phase 1 stack with its data kept: V2 applied, all 9 existing
+  links intact and redirecting. Smoke test **18/18**.
+- **Redirect benchmark before vs after:** p50 unchanged (~2 ms), p99 within noise, about 10% lower
+  throughput at saturation (click inserts share the laptop's DB). No clicks dropped.
+- **Graceful shutdown under load:** 55,114 successful redirects, 55,114 stored clicks.
+- Details and output in [scenario 2 §3](docs/scenarios/02-brownfield.md).
+
+### Known gaps
+- At-most-once delivery: a crash can lose up to one buffer of clicks ([ADR-0006](docs/adr/0006-async-click-capture.md)).
+- No rollups or retention yet (IMP-015, IMP-016). One app instance, so deploys have a few seconds of downtime (IMP-020).
+
 ## [0.1.0] Phase 1: Greenfield core
 
 ### Added

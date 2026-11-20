@@ -14,7 +14,7 @@
 
     <groupId>com.shortener</groupId>
     <artifactId>url-shortener</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.2.0-SNAPSHOT</version>
     <name>url-shortener</name>
     <description>Production-style URL shortener: core APIs, analytics, reliability.</description>
 

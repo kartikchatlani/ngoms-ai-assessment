@@ -6,6 +6,7 @@ the regression test. Entries are never deleted.
 | ID | Date found | Phase | Severity | Status |
 |---|---|---|---|---|
 | [BUG-001](#bug-001) | 2026-11-18 | 1 | Medium | Fixed |
+| [BUG-002](#bug-002) | 2026-11-19 | 2 | Low | Fixed |
 
 ---
 
@@ -30,3 +31,21 @@ the regression test. Entries are never deleted.
     storable in real Postgres)
 - **Lesson:** validate against the *storage* type's range, not only the language type's range.
   The same check is worth doing for every bounded column added later.
+
+---
+
+## BUG-002
+**The JDK's HTTP client counted as DESKTOP instead of BOT**
+
+- **Found:** 2026-11-19, while writing `AnalyticsIntegrationTest` (before release). Its HTTP
+  client sends `Java-http-client/21` by default, and I checked how that would be classified.
+- **Severity:** Low. Analytics only. Automated traffic from Java services inflated the "human"
+  (DESKTOP) count. Redirects and totals were unaffected.
+- **Symptom:** `ClickClassifier.agentClass("Java-http-client/21.0.12")` returned `DESKTOP`.
+- **Root cause:** the bot pattern contained `httpclient`. That matches `Apache-HttpClient`
+  (case-insensitive) but not the hyphenated `http-client` the JDK sends. The pattern was written
+  from memory of library names, not from real User-Agent strings.
+- **Fix:** pattern term changed to `http-?client` in `ClickClassifier`.
+- **Regression tests:** `ClickClassifierTest.scriptedHttpClientsAreBots_regressionBug002`
+  (JDK, Apache and OkHttp client strings).
+- **Lesson:** build heuristics from real samples, and put those samples in the test table.

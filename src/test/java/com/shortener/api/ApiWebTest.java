@@ -3,7 +3,10 @@ package com.shortener.api;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -15,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.shortener.analytics.ClickRecorder;
 import com.shortener.config.AppConfig;
 import com.shortener.link.AliasTakenException;
 import com.shortener.link.CodeSpaceExhaustedException;
@@ -51,6 +55,10 @@ class ApiWebTest {
 
     @MockitoBean
     LinkService service;
+
+    // Added in Phase 2: RedirectController now records clicks.
+    @MockitoBean
+    ClickRecorder clicks;
 
     // ---- create ---------------------------------------------------------------------------
 
@@ -243,6 +251,33 @@ class ApiWebTest {
         mvc.perform(get("/old1234"))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.errorCode").value("LINK_EXPIRED"));
+    }
+
+    @Test
+    void redirectRecordsAClickWithRefererAndUserAgent() throws Exception {
+        when(service.resolve("Ab3xY9z")).thenReturn(link("Ab3xY9z", null));
+
+        mvc.perform(get("/Ab3xY9z").header("Referer", "https://news.example/post/1").header("User-Agent", "Mozilla/5.0"))
+                .andExpect(status().isFound());
+        verify(clicks).record(1L, "https://news.example/post/1", "Mozilla/5.0");
+    }
+
+    @Test
+    void headRedirectIsNotCountedAsAClick() throws Exception {
+        when(service.resolve("Ab3xY9z")).thenReturn(link("Ab3xY9z", null));
+
+        mvc.perform(head("/Ab3xY9z")).andExpect(status().isFound());
+        verify(clicks, never()).record(anyLong(), any(), any());
+    }
+
+    @Test
+    void failedRedirectsAreNotCounted() throws Exception {
+        when(service.resolve("nope123")).thenThrow(new LinkNotFoundException("nope123"));
+        when(service.resolve("old1234")).thenThrow(new LinkGoneException("old1234", LinkStatus.DELETED));
+
+        mvc.perform(get("/nope123")).andExpect(status().isNotFound());
+        mvc.perform(get("/old1234")).andExpect(status().isGone());
+        verify(clicks, never()).record(anyLong(), any(), any());
     }
 
     @Test

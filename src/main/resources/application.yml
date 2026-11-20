@@ -45,3 +45,8 @@ app:
   code-max-attempts: 5
   max-url-length: 2048
   max-page-size: 100
+  analytics:
+    # Kill switch for click recording (ADR-0006). Redirects work either way.
+    enabled: ${APP_ANALYTICS_ENABLED:true}
+    buffer-capacity: ${APP_ANALYTICS_BUFFER_CAPACITY:10000}
+    batch-size: 500

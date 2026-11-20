@@ -1,6 +1,6 @@
 # Testing approach
 
-> Current as of **Phase 1**.
+> Current as of **Phase 2**.
 
 ## Philosophy
 - **Test behaviour, not implementation.** Tests assert outcomes (status codes, stored state, error
@@ -10,7 +10,8 @@
   PostgreSQL (Testcontainers), not H2. H2 has no compatible `ON CONFLICT`, so it would test
   something other than production.
 - **Deterministic.** Time comes from an injected `Clock`, there are no `sleep`s, and statistical tests use
-  bounds about 10 standard deviations wide.
+  bounds about 10 standard deviations wide. Asynchronous click writes are awaited exactly with
+  `ClickRecorder.awaitIdle()` (it tracks in-flight batches too), not with fixed delays.
 - **Every bug gets a regression test**, named `..._regressionBugNNN` and cross-referenced in
   [BUGS.md](BUGS.md).
 
@@ -18,10 +19,11 @@
 
 | Level | Question answered | Speed | Location |
 |---|---|---|---|
-| **Unit** | Are the business rules right? | ms | `src/test/java/com/shortener/link/*Test.java` |
-| **Web slice** | Is the HTTP contract right (status, headers, JSON, error shape)? | ~2s total | `src/test/java/com/shortener/api/ApiWebTest.java` |
-| **Integration** | Does it really work with Postgres, Flyway and HTTP together, including under concurrency? | ~10s + container start | `src/test/java/com/shortener/LinkApiIntegrationTest.java` |
-| **Smoke** | Does the deployed artifact work? | seconds | `scripts/smoke-test.sh` |
+| **Unit** (113) | Are the business rules right? | ms | `src/test/java/com/shortener/{link,analytics}/*Test.java` |
+| **Web slice** (29) | Is the HTTP contract right (status, headers, JSON, error shape)? | ~2s total | `src/test/java/com/shortener/api/*WebTest.java` |
+| **Integration** (17) | Does it really work with Postgres, Flyway and HTTP together, including under concurrency? Do migrations upgrade a populated DB and stay rollback-safe? | ~15s + container start | `LinkApiIntegrationTest`, `AnalyticsIntegrationTest`, `MigrationUpgradeTest` |
+| **Smoke** (18 checks) | Does the deployed artifact work? | seconds | `scripts/smoke-test.sh` |
+| **Benchmark** | Did a change slow the redirect path? (before/after on one machine) | ~1 min | `scripts/RedirectBench.java` |
 
 ## How to run
 
@@ -29,19 +31,31 @@
 ./mvnw test                      # unit + web + integration (integration auto-skips without Docker)
 ./mvnw test -Dtest=LinkServiceTest   # a single class
 docker compose up --build -d && ./scripts/smoke-test.sh   # end-to-end against the container
+java scripts/RedirectBench.java http://localhost:8080 20000 32   # redirect latency (JDK 21, no build needed)
 ```
 **Windows:** use `mvnw.cmd` in PowerShell, and run the smoke script with `bash ./scripts/smoke-test.sh`.
 PowerShell can't execute `.sh` files directly; it opens them in the associated editor instead.
 
 ## Coverage of risk (not just lines)
-The risk register in [scenario 1 §1.2](scenarios/01-greenfield.md) maps each identified risk to the test
-that guards it. The key behaviours are summarised in §3.4 of that document.
+The risk registers in [scenario 1 §1.2](scenarios/01-greenfield.md) and
+[scenario 2 §1.3](scenarios/02-brownfield.md) map each identified risk to the test that guards it.
+Key behaviours are summarised in §3.4 and §3.5 of those documents.
+
+## Brownfield testing practice (Phase 2)
+- **Run the old suite before writing new tests.** Any failure at that point is a regression or a
+  wiring change, and it is recorded as such ([scenario 2 §3.2](scenarios/02-brownfield.md)).
+- **Measure before changing.** The redirect benchmark ran on the unchanged build first, so the
+  "after" numbers have something to be compared with.
+- **Test migrations against data, in both directions.** `MigrationUpgradeTest` upgrades a populated
+  V1 database to V2, then validates it with a V1-only Flyway, which is what a rollback does.
 
 ## Known gaps
 - Integration tests **auto-skip when Docker isn't running**, so a green build without Docker is
-  not a full pass. Check that the `LinkApiIntegrationTest` line reports `Skipped: 0`. (Last full run:
-  99/99 passed.) CI (IMP-004) would make this impossible to miss.
-- No load/performance test yet. It is planned for when caching is introduced, so there is a baseline to
-  compare against.
+  not a full pass. Check that the three integration classes report `Skipped: 0` (last full run:
+  159/159 passed). CI (IMP-004) would make this impossible to miss.
+- The benchmark runs the app, the database and the load generator on one machine. It is good for
+  before/after comparisons, not for capacity figures (IMP-009).
+- Graceful shutdown under load and the in-place upgrade were verified manually against Docker
+  Compose ([scenario 2 §3.4](scenarios/02-brownfield.md)), not by an automated test.
 - No CI pipeline yet (IMPROVEMENTS.md). Tests run locally.
 - No mutation testing or coverage gate.

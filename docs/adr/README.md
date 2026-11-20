@@ -11,3 +11,5 @@ so the history of the reasoning is preserved.
 | [0003](0003-short-code-generation.md) | Random base62 codes, uniqueness enforced by the DB | Accepted | 2026-11-18 | 2026-11-18 |
 | [0004](0004-redirect-semantics.md) | 302 redirects, 404 vs 410, soft delete without code reuse | Accepted | 2026-11-18 | 2026-11-18 |
 | [0005](0005-api-design.md) | API conventions: versioning, Problem Details, keyset pagination, no dedupe | Accepted | 2026-11-18 | 2026-11-18 |
+| [0006](0006-async-click-capture.md) | Capture clicks asynchronously, off the redirect path | Accepted | 2026-11-19 | 2026-11-19 |
+| [0007](0007-analytics-data-model-and-rollout.md) | Analytics data model, privacy, and a rollback-safe migration | Accepted | 2026-11-19 | 2026-11-19 |
