@@ -14,6 +14,7 @@ import com.shortener.analytics.ClickRepository.DailyCount;
 import com.shortener.analytics.ClickRepository.ReferrerCount;
 import com.shortener.analytics.ClickRepository.Totals;
 import com.shortener.analytics.ClickRepository.WindowSummary;
+import com.shortener.link.Caller;
 import com.shortener.link.InvalidRequestException;
 import com.shortener.link.Link;
 import com.shortener.link.LinkNotFoundException;
@@ -34,13 +35,15 @@ class LinkStatsServiceTest {
     // Late evening UTC: the window must use UTC days, not the machine's local date.
     private static final Instant NOW = Instant.parse("2026-11-19T23:30:00Z");
 
+    private static final Caller OWNER = Caller.key(1, false);
+
     private final LinkService links = mock(LinkService.class);
     private final ClickRepository clicks = mock(ClickRepository.class);
     private final LinkStatsService service = new LinkStatsService(links, clicks, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() {
-        when(links.get("Ab3xY9z")).thenReturn(new Link(7, "Ab3xY9z", "https://example.com", false, NOW, null, null));
+        when(links.get(eq("Ab3xY9z"), eq(OWNER))).thenReturn(new Link(7, "Ab3xY9z", "https://example.com", false, NOW, null, null));
         when(clicks.totals(7)).thenReturn(new Totals(12, Instant.parse("2026-11-19T20:00:00Z")));
         when(clicks.windowSummary(eq(7L), any(), any()))
                 .thenReturn(new WindowSummary(5, 2, Map.of(AgentClass.DESKTOP, 3L, AgentClass.MOBILE, 1L,
@@ -52,7 +55,7 @@ class LinkStatsServiceTest {
     void windowCoversTheLastNUtcDaysIncludingToday() {
         when(clicks.daily(anyLong(), any(), any())).thenReturn(List.of());
 
-        LinkStats stats = service.stats("Ab3xY9z", 7);
+        LinkStats stats = service.stats("Ab3xY9z", 7, OWNER);
 
         assertThat(stats.from()).isEqualTo(LocalDate.parse("2026-11-13"));
         assertThat(stats.to()).isEqualTo(LocalDate.parse("2026-11-19"));
@@ -66,7 +69,7 @@ class LinkStatsServiceTest {
                 new DailyCount(LocalDate.parse("2026-11-17"), 4),
                 new DailyCount(LocalDate.parse("2026-11-19"), 1)));
 
-        LinkStats stats = service.stats("Ab3xY9z", 3);
+        LinkStats stats = service.stats("Ab3xY9z", 3, OWNER);
 
         assertThat(stats.daily()).containsExactly(
                 new DailyCount(LocalDate.parse("2026-11-17"), 4),
@@ -78,7 +81,7 @@ class LinkStatsServiceTest {
     void combinesTotalsWindowAndBreakdowns() {
         when(clicks.daily(anyLong(), any(), any())).thenReturn(List.of());
 
-        LinkStats stats = service.stats("Ab3xY9z", null);
+        LinkStats stats = service.stats("Ab3xY9z", null, OWNER);
 
         assertThat(stats.code()).isEqualTo("Ab3xY9z");
         assertThat(stats.totalClicks()).isEqualTo(12);
@@ -94,7 +97,7 @@ class LinkStatsServiceTest {
     @ParameterizedTest
     @ValueSource(ints = {0, -1, 366})
     void rejectsWindowOutsideOneToAYear(int days) {
-        assertThatThrownBy(() -> service.stats("Ab3xY9z", days))
+        assertThatThrownBy(() -> service.stats("Ab3xY9z", days, OWNER))
                 .isInstanceOf(InvalidRequestException.class)
                 .hasMessage("days must be between 1 and 365");
         verifyNoInteractions(clicks);
@@ -103,15 +106,15 @@ class LinkStatsServiceTest {
     @Test
     void acceptsTheFullYear() {
         when(clicks.daily(anyLong(), any(), any())).thenReturn(List.of());
-        assertThat(service.stats("Ab3xY9z", 365).daily()).hasSize(365);
+        assertThat(service.stats("Ab3xY9z", 365, OWNER).daily()).hasSize(365);
     }
 
     @Test
     void unknownOrDeletedLinkIs404AndSkipsTheAnalyticsQueries() {
         // LinkService.get already hides deleted links; stats reuses that rule.
-        when(links.get("gone123")).thenThrow(new LinkNotFoundException("gone123"));
+        when(links.get(eq("gone123"), eq(OWNER))).thenThrow(new LinkNotFoundException("gone123"));
 
-        assertThatThrownBy(() -> service.stats("gone123", 7)).isInstanceOf(LinkNotFoundException.class);
+        assertThatThrownBy(() -> service.stats("gone123", 7, OWNER)).isInstanceOf(LinkNotFoundException.class);
         verifyNoInteractions(clicks);
     }
 

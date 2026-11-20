@@ -13,13 +13,19 @@ import com.shortener.analytics.ClickRepository.DailyCount;
 import com.shortener.analytics.ClickRepository.ReferrerCount;
 import com.shortener.analytics.LinkStats;
 import com.shortener.analytics.LinkStatsService;
+import com.shortener.auth.ApiKey;
+import com.shortener.auth.ApiKeyService;
 import com.shortener.config.AppConfig;
+import com.shortener.config.SecurityConfig;
+import com.shortener.web.ProblemWriter;
 import com.shortener.link.InvalidRequestException;
 import com.shortener.link.LinkNotFoundException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -30,7 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /** HTTP contract of GET /api/v1/links/{code}/stats. */
 @WebMvcTest(controllers = LinkStatsController.class)
-@Import(AppConfig.class)
+@Import({AppConfig.class, SecurityConfig.class, ProblemWriter.class})
 class LinkStatsWebTest {
 
     @Autowired
@@ -39,15 +45,31 @@ class LinkStatsWebTest {
     @MockitoBean
     LinkStatsService service;
 
+    @MockitoBean
+    ApiKeyService keys;
+
+    @BeforeEach
+    void phase3Wiring() {
+        when(keys.authenticate("sk_test_client_key"))
+                .thenReturn(Optional.of(new ApiKey(1, "client", "sk_test_c", false, Instant.EPOCH, null)));
+    }
+
+    @Test
+    void statsNeedAnApiKey() throws Exception {
+        mvc.perform(get("/api/v1/links/Ab3xY9z/stats"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_REQUIRED"));
+    }
+
     @Test
     void returnsStatsShape() throws Exception {
-        when(service.stats("Ab3xY9z", 2)).thenReturn(new LinkStats("Ab3xY9z", 12,
+        when(service.stats(eq("Ab3xY9z"), eq(2), any())).thenReturn(new LinkStats("Ab3xY9z", 12,
                 Instant.parse("2026-11-19T20:00:00Z"), LocalDate.parse("2026-11-18"), LocalDate.parse("2026-11-19"), 5,
                 List.of(new DailyCount(LocalDate.parse("2026-11-18"), 0), new DailyCount(LocalDate.parse("2026-11-19"), 5)),
                 List.of(new ReferrerCount("t.co", 3)), 2,
                 Map.of(AgentClass.DESKTOP, 3L, AgentClass.MOBILE, 1L, AgentClass.BOT, 1L, AgentClass.UNKNOWN, 0L)));
 
-        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=2"))
+        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=2").with(ApiWebTest.CLIENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("Ab3xY9z"))
                 .andExpect(jsonPath("$.totalClicks").value(12))
@@ -66,9 +88,9 @@ class LinkStatsWebTest {
 
     @Test
     void unknownLinkIs404Problem() throws Exception {
-        when(service.stats(eq("nope123"), any())).thenThrow(new LinkNotFoundException("nope123"));
+        when(service.stats(eq("nope123"), any(), any())).thenThrow(new LinkNotFoundException("nope123"));
 
-        mvc.perform(get("/api/v1/links/nope123/stats"))
+        mvc.perform(get("/api/v1/links/nope123/stats").with(ApiWebTest.CLIENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.errorCode").value("LINK_NOT_FOUND"));
@@ -76,12 +98,12 @@ class LinkStatsWebTest {
 
     @Test
     void badDaysIs400() throws Exception {
-        when(service.stats("Ab3xY9z", 0)).thenThrow(new InvalidRequestException("days", "must be between 1 and 365"));
+        when(service.stats(eq("Ab3xY9z"), eq(0), any())).thenThrow(new InvalidRequestException("days", "must be between 1 and 365"));
 
-        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=0"))
+        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=0").with(ApiWebTest.CLIENT_KEY))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("days"));
-        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=lots"))
+        mvc.perform(get("/api/v1/links/Ab3xY9z/stats?days=lots").with(ApiWebTest.CLIENT_KEY))
                 .andExpect(status().isBadRequest());
     }
 }

@@ -47,8 +47,8 @@ class MigrationUpgradeTest {
                   ('deleted', 'https://example.com/del',  true,  now() - interval '2 days', NULL, now() - interval '1 hour')
                 """).update();
 
-        // 2. Deploy Phase 2: Flyway applies V2 on startup.
-        var result = Flyway.configure().dataSource(ds).load().migrate();
+        // 2. Deploy Phase 2: Flyway applies V2 on startup. (Pinned to V2 since Phase 3 added V3/V4.)
+        var result = Flyway.configure().dataSource(ds).target("2").load().migrate();
         assertThat(result.migrationsExecuted).isEqualTo(1);
         assertThat(result.targetSchemaVersion).isEqualTo("2");
 
@@ -79,6 +79,73 @@ class MigrationUpgradeTest {
         // Phase 1's queries still work on the upgraded schema (expand-only migration).
         assertThat(jdbc.sql("SELECT long_url FROM links WHERE code = 'live001'").query(String.class).single())
                 .isEqualTo("https://example.com/live");
+    }
+
+    /**
+     * Phase 3 (ADR-0008): a populated V2 database, with clicks, goes to V4. Existing links get no
+     * owner (admin-only, scenario 3 Q7), the NOT VALID foreign keys end up validated, and a Phase 2
+     * build (V1 + V2 only) still starts against the result.
+     */
+    @Test
+    void upgradesAPopulatedV2DatabaseToV4AndStaysRollbackCompatible() throws Exception {
+        var ds = freshDatabase();
+        var jdbc = JdbcClient.create(ds);
+
+        // 1. Production before Phase 3: V2 with links and clicks.
+        Flyway.configure().dataSource(ds).target("2").load().migrate();
+        jdbc.sql("""
+                INSERT INTO links (code, long_url, custom_alias, created_at) VALUES
+                  ('campaign', 'https://example.com/campaign', true, now() - interval '3 days'),
+                  ('random1',  'https://example.com/r',        false, now() - interval '1 day')
+                """).update();
+        jdbc.sql("""
+                INSERT INTO click_events (link_id, clicked_at, agent_class)
+                SELECT id, now(), 'MOBILE' FROM links""").update();
+
+        // 2. Deploy Phase 3: V3 (expand) and V4 (validate) run as separate transactions.
+        var result = Flyway.configure().dataSource(ds).load().migrate();
+        assertThat(result.migrationsExecuted).isEqualTo(2);
+        assertThat(result.targetSchemaVersion).isEqualTo("4");
+
+        // Existing links and clicks are intact; nobody owns the old links yet.
+        assertThat(jdbc.sql("SELECT count(*) FROM links WHERE owner_key_id IS NULL AND created_by IS NULL AND blocked_at IS NULL")
+                .query(Long.class).single()).isEqualTo(2);
+        assertThat(jdbc.sql("SELECT count(*) FROM click_events").query(Long.class).single()).isEqualTo(2);
+        // V4 really validated the constraints V3 added as NOT VALID.
+        assertThat(jdbc.sql("""
+                        SELECT bool_and(convalidated) FROM pg_constraint
+                        WHERE conname IN ('fk_links_owner_key', 'fk_links_created_by', 'fk_links_deleted_by')""")
+                .query(Boolean.class).single()).isTrue();
+
+        // 3. Roll back to the Phase 2 build (ships V1 + V2 only).
+        for (String file : List.of("V1__create_links.sql", "V2__create_click_events.sql")) {
+            Files.copy(Path.of(Objects.requireNonNull(getClass().getResource("/db/migration/" + file)).toURI()),
+                    phase1Migrations.resolve(file));
+        }
+        Flyway phase2 = Flyway.configure().dataSource(ds)
+                .locations("filesystem:" + phase1Migrations.toAbsolutePath())
+                .load();
+        assertThatCode(phase2::validate).doesNotThrowAnyException();
+        assertThat(phase2.migrate().migrationsExecuted).isZero();
+        // Phase 2's own INSERT (no owner columns) still works: the new columns are all nullable.
+        assertThatCode(() -> jdbc.sql("""
+                INSERT INTO links (code, long_url, custom_alias, created_at, expires_at)
+                VALUES ('after-rollback', 'https://example.com', false, now(), NULL)""").update())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void v3RejectsOwnersThatAreNotKeysAndUppercaseBlockedDomains() {
+        var ds = freshDatabase();
+        Flyway.configure().dataSource(ds).load().migrate();
+        var jdbc = JdbcClient.create(ds);
+
+        assertThatThrownBy(() -> jdbc.sql("""
+                INSERT INTO links (code, long_url, created_at, owner_key_id) VALUES ('abc', 'https://example.com', now(), 999)""")
+                .update()).hasMessageContaining("fk_links_owner_key");
+        assertThatThrownBy(() -> jdbc.sql("""
+                INSERT INTO blocked_domains (domain, created_at) VALUES ('Evil.Example', now())""").update())
+                .hasMessageContaining("ck_blocked_domains_lower");
     }
 
     @Test

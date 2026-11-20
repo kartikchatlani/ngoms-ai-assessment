@@ -26,6 +26,9 @@ services:
       DB_USER: shortener
       DB_PASSWORD: shortener
       APP_BASE_URL: http://localhost:8080
+      # Bootstrap admin API key (ADR-0008). Local-dev only, like the DB password above; real
+      # deployments inject a secret. Changing it revokes the old one on the next start.
+      APP_ADMIN_KEY: sk_local_dev_admin_change_me
       # JSON (Elastic Common Schema) logs in containers; human-readable logs when run locally.
       LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:

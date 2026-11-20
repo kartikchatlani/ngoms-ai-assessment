@@ -17,6 +17,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,9 +37,15 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Skipped automatically when Docker is not available (see docs/testing.md).
  */
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "app.base-url=http://sho.rt")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "app.base-url=http://sho.rt",
+        // Phase 3: these tests are about link behaviour, not abuse controls (AbuseIntegrationTest).
+        "app.security.admin-key=" + LinkApiIntegrationTest.ADMIN_KEY,
+        "app.abuse.anonymous-creates-per-hour=1000000",
+        "app.abuse.key-creates-per-hour=1000000"})
 class LinkApiIntegrationTest {
+
+    static final String ADMIN_KEY = "sk_integration_test_admin_key";
 
     @Container
     @ServiceConnection
@@ -56,6 +63,21 @@ class LinkApiIntegrationTest {
     private final HttpClient http = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NEVER) // we are testing the redirect itself
             .build();
+
+    /** Phase 3: management needs a key, so each test acts as a freshly issued client key. */
+    private String key;
+    private long keyId;
+
+    @BeforeEach
+    void issueKey() throws Exception {
+        var res = http.send(HttpRequest.newBuilder(uri("/api/v1/admin/keys"))
+                .header("Content-Type", "application/json").header("Authorization", "Bearer " + ADMIN_KEY)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"integration\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        JsonNode issued = json.readTree(res.body());
+        key = issued.get("key").asString();
+        keyId = issued.get("id").asLong();
+    }
 
     @Test
     void fullLifecycle_create_get_redirect_list_delete() throws Exception {
@@ -128,7 +150,7 @@ class LinkApiIntegrationTest {
     void expiredLinkIsGone() throws Exception {
         // Expired links cannot be created via the API (expiresAt must be in the future), so seed one.
         Instant created = Instant.now().minusSeconds(120);
-        repository.insertIfCodeAbsent(new NewLink("expired-1", "https://example.com", true, created, created.plusSeconds(60)));
+        repository.insertIfCodeAbsent(new NewLink("expired-1", "https://example.com", true, created, created.plusSeconds(60), keyId));
 
         assertThat(send("GET", "/expired-1").statusCode()).isEqualTo(410);
         JsonNode link = json.readTree(send("GET", "/api/v1/links/expired-1").body());
@@ -183,12 +205,14 @@ class LinkApiIntegrationTest {
     private HttpResponse<String> post(String jsonBody) throws Exception {
         return http.send(HttpRequest.newBuilder(uri("/api/v1/links"))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + key)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> send(String method, String path) throws Exception {
-        return http.send(HttpRequest.newBuilder(uri(path)).method(method, HttpRequest.BodyPublishers.noBody()).build(),
+        return http.send(HttpRequest.newBuilder(uri(path)).method(method, HttpRequest.BodyPublishers.noBody())
+                        .header("Authorization", "Bearer " + key).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 

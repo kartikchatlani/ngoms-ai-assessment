@@ -4,6 +4,60 @@ All notable changes, newest first. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). Each entry links to the decisions (ADRs), bugs and
 scenario docs behind it.
 
+## [0.3.0] Phase 3: Ambiguous requirement, "lock it down"
+
+### Added
+- **API keys and ownership** ([ADR-0008](docs/adr/0008-api-keys-and-ownership.md)):
+  `Authorization: Bearer <key>`, admin-issued, stored as SHA-256 only. Links belong to the key that
+  created them; get, list, stats and delete cover only your own links. Someone else's link is `404`,
+  identical to a missing one. Bootstrap admin from `APP_ADMIN_KEY`; rotating it revokes the old one.
+- **Rate limiting on create** ([ADR-0009](docs/adr/0009-rate-limiting.md)): token bucket, 10/hour
+  per IP anonymously and 1,000/hour per key; admins unlimited. `429` + `Retry-After`.
+  `X-Forwarded-For` trusted only from configured proxies.
+- **URL screening and takedown** ([ADR-0010](docs/adr/0010-url-screening-and-takedown.md)):
+  admin-managed domain blocklist (covers subdomains), checked on create and on every redirect;
+  links to other URL shorteners refused; single-link takedown. Blocked links return `410 LINK_BLOCKED`.
+- **Admin API** under `/api/v1/admin`: keys, link block/unblock and owner reassignment, blocked domains.
+- **Audit trail:** `created_by`, `owner_key_id`, `deleted_by` on links; key prefix in request logs.
+- **Schema:** `V3__api_keys_ownership_blocking.sql` (expand-only; foreign keys added `NOT VALID`)
+  and `V4__validate_link_key_constraints.sql` (validates them without blocking reads or writes).
+- **Metrics:** `shortener.ratelimit.rejected{tier}`.
+- **Tests:** +53 unit, +16 web-slice, +13 integration (`AbuseIntegrationTest` reproduces each
+  symptom; V2→V4 upgrade and rollback in `MigrationUpgradeTest`). Smoke test: 31 checks.
+- **Docs:** [engineering summary](docs/ENGINEERING-SUMMARY.md), ADR-0008 to ADR-0010, [ambiguous scenario](docs/scenarios/03-ambiguous.md); architecture,
+  testing, limitations and README updated; IMP-022 to IMP-026.
+
+### Changed (breaking, intentional)
+- `GET/DELETE /api/v1/links/{code}`, `GET /api/v1/links` and `/stats` need an API key: `401`
+  without one. The open contract was the vulnerability (scenario 3 §1.4).
+- `GET /api/v1/links` returns only the caller's links (admins: all).
+- `/actuator/metrics` is admin-only. Health stays public.
+- Unknown paths return `401`/`403` instead of `404` (default-deny security).
+- Links created before this release have no owner and are admin-only until assigned.
+- `LinkStatus` gains `BLOCKED`.
+
+### Unchanged
+- Anonymous `POST /api/v1/links` (now rate-limited and screened), and redirects for everyone.
+
+### Fixed
+- [BUG-003](docs/BUGS.md#bug-003): creating a key without the optional `admin` field returned 400
+  (Jackson 3 primitive handling; found before release).
+
+### Verified
+- `./mvnw test` with Docker running: **241/241 pass, 0 skipped**.
+- The unchanged Phase 2 integration tests and smoke test fail **only** at the intended contract
+  changes (401 without a key, 429 over the anonymous limit).
+- Live upgrade of the running stack (22 links, 209,152 clicks) to V4; the Phase 2 build still starts
+  and redirects against the V4 database. Smoke test **31/31**.
+- Redirect cost: all three releases run side by side against one database, 6 rounds with rotated
+  order. Phase 3 vs Phase 2: about 3.5% throughput, +0.6 ms p50, p99 within noise. This also
+  corrected Phase 2's own cost from about 10% to about 5% throughput (scenario 2 §3.3).
+- Details in [scenario 3 §3](docs/scenarios/03-ambiguous.md).
+
+### Known gaps
+- Rate limits and the blocklist cache are per instance (IMP-002, IMP-026). Screening is reactive;
+  there is no Safe Browsing yet (IMP-003).
+
 ## [0.2.0] Phase 2: Brownfield click analytics
 
 ### Added

@@ -4,6 +4,8 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,7 +21,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.shortener.analytics.ClickRecorder;
+import com.shortener.abuse.CreateRateLimiter;
+import com.shortener.auth.ApiKey;
+import com.shortener.auth.ApiKeyService;
 import com.shortener.config.AppConfig;
+import com.shortener.config.SecurityConfig;
+import com.shortener.web.ClientIpResolver;
+import com.shortener.web.ProblemWriter;
 import com.shortener.link.AliasTakenException;
 import com.shortener.link.CodeSpaceExhaustedException;
 import com.shortener.link.InvalidRequestException;
@@ -31,6 +39,8 @@ import com.shortener.link.LinkStatus;
 import com.shortener.web.RequestIdFilter;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -39,13 +49,14 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * HTTP contract tests: status codes, headers, JSON shape and error format, with the service
  * mocked. Fast (no DB), so they cover every error branch; the integration test covers wiring.
  */
 @WebMvcTest(controllers = {LinkController.class, RedirectController.class})
-@Import({AppConfig.class, RequestIdFilter.class})
+@Import({AppConfig.class, RequestIdFilter.class, SecurityConfig.class, ProblemWriter.class, ClientIpResolver.class})
 class ApiWebTest {
 
     private static final Instant CREATED = Instant.parse("2026-11-18T12:00:00Z");
@@ -60,11 +71,32 @@ class ApiWebTest {
     @MockitoBean
     ClickRecorder clicks;
 
+    // Added in Phase 3: management endpoints need a key (ADR-0008); create is rate-limited.
+    // Authentication and limits have their own tests in SecurityWebTest.
+    @MockitoBean
+    ApiKeyService keys;
+
+    @MockitoBean
+    CreateRateLimiter rateLimiter;
+
+    static final RequestPostProcessor CLIENT_KEY = request -> {
+        request.addHeader("Authorization", "Bearer sk_test_client_key");
+        return request;
+    };
+
+    @BeforeEach
+    void phase3Wiring() {
+        when(keys.authenticate("sk_test_client_key"))
+                .thenReturn(Optional.of(new ApiKey(1, "client", "sk_test_c", false, CREATED, null)));
+        // statusOf is real logic on the service; the mock would otherwise return null.
+        when(service.statusOf(any())).thenAnswer(inv -> inv.<Link>getArgument(0).statusAt(Instant.now()));
+    }
+
     // ---- create ---------------------------------------------------------------------------
 
     @Test
     void createReturns201WithLocationAndBody() throws Exception {
-        when(service.create(any())).thenReturn(link("Ab3xY9z", null));
+        when(service.create(any(), any())).thenReturn(link("Ab3xY9z", null));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"https://example.com\"}"))
@@ -105,7 +137,7 @@ class ApiWebTest {
 
     @Test
     void domainValidationErrorIs400WithField() throws Exception {
-        when(service.create(any())).thenThrow(new InvalidRequestException("url", "must use http or https"));
+        when(service.create(any(), any())).thenThrow(new InvalidRequestException("url", "must use http or https"));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"ftp://example.com\"}"))
@@ -117,7 +149,7 @@ class ApiWebTest {
 
     @Test
     void aliasTakenIs409() throws Exception {
-        when(service.create(any())).thenThrow(new AliasTakenException("promo"));
+        when(service.create(any(), any())).thenThrow(new AliasTakenException("promo"));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"https://example.com\",\"alias\":\"promo\"}"))
@@ -127,7 +159,7 @@ class ApiWebTest {
 
     @Test
     void exhaustionIs503() throws Exception {
-        when(service.create(any())).thenThrow(new CodeSpaceExhaustedException(5));
+        when(service.create(any(), any())).thenThrow(new CodeSpaceExhaustedException(5));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"https://example.com\"}"))
@@ -137,7 +169,7 @@ class ApiWebTest {
 
     @Test
     void databaseDownIs503WithRetryAfter() throws Exception {
-        when(service.create(any())).thenThrow(new DataAccessResourceFailureException("connection refused"));
+        when(service.create(any(), any())).thenThrow(new DataAccessResourceFailureException("connection refused"));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"https://example.com\"}"))
@@ -150,7 +182,7 @@ class ApiWebTest {
 
     @Test
     void unexpectedErrorIs500WithoutLeakingDetails() throws Exception {
-        when(service.create(any())).thenThrow(new IllegalStateException("secret internal state"));
+        when(service.create(any(), any())).thenThrow(new IllegalStateException("secret internal state"));
 
         mvc.perform(post("/api/v1/links").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"https://example.com\"}"))
@@ -162,28 +194,28 @@ class ApiWebTest {
 
     @Test
     void getReturnsLinkIncludingExpiredStatus() throws Exception {
-        when(service.get("old1234")).thenReturn(link("old1234", CREATED.plusSeconds(1)));
+        when(service.get(eq("old1234"), any())).thenReturn(link("old1234", CREATED.plusSeconds(1)));
 
-        mvc.perform(get("/api/v1/links/old1234"))
+        mvc.perform(get("/api/v1/links/old1234").with(CLIENT_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("EXPIRED"));
     }
 
     @Test
     void getUnknownIs404() throws Exception {
-        when(service.get("nope123")).thenThrow(new LinkNotFoundException("nope123"));
+        when(service.get(eq("nope123"), any())).thenThrow(new LinkNotFoundException("nope123"));
 
-        mvc.perform(get("/api/v1/links/nope123"))
+        mvc.perform(get("/api/v1/links/nope123").with(CLIENT_KEY))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("LINK_NOT_FOUND"));
     }
 
     @Test
     void listReturnsItemsAndCursor() throws Exception {
-        when(service.list(null, 2)).thenReturn(new LinkService.Page(
+        when(service.list(isNull(), eq(2), any())).thenReturn(new LinkService.Page(
                 List.of(link("aaa1111", null), link("bbb2222", null)), "OQ"));
 
-        mvc.perform(get("/api/v1/links").param("limit", "2"))
+        mvc.perform(get("/api/v1/links").with(CLIENT_KEY).param("limit", "2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(2)))
                 .andExpect(jsonPath("$.nextCursor").value("OQ"));
@@ -191,19 +223,19 @@ class ApiWebTest {
 
     @Test
     void listWithNonNumericLimitIs400() throws Exception {
-        mvc.perform(get("/api/v1/links").param("limit", "lots"))
+        mvc.perform(get("/api/v1/links").with(CLIENT_KEY).param("limit", "lots"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void deleteIs204() throws Exception {
-        mvc.perform(delete("/api/v1/links/abc1234")).andExpect(status().isNoContent());
+        mvc.perform(delete("/api/v1/links/abc1234").with(CLIENT_KEY)).andExpect(status().isNoContent());
     }
 
     @Test
     void deleteUnknownIs404() throws Exception {
-        doThrow(new LinkNotFoundException("nope123")).when(service).delete("nope123");
-        mvc.perform(delete("/api/v1/links/nope123")).andExpect(status().isNotFound());
+        doThrow(new LinkNotFoundException("nope123")).when(service).delete(eq("nope123"), any());
+        mvc.perform(delete("/api/v1/links/nope123").with(CLIENT_KEY)).andExpect(status().isNotFound());
     }
 
     // ---- redirect -----------------------------------------------------------------------
@@ -282,8 +314,10 @@ class ApiWebTest {
 
     @Test
     void pathsThatCannotBeCodesNeverReachTheService() throws Exception {
-        mvc.perform(get("/favicon.ico")).andExpect(status().isNotFound());
-        mvc.perform(get("/ab")).andExpect(status().isNotFound());
+        // Phase 3: was 404. Security is default-deny (ADR-0008), so paths that match no rule are
+        // refused before routing; anonymous callers get 401.
+        mvc.perform(get("/favicon.ico")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/ab")).andExpect(status().isUnauthorized());
         verifyNoInteractions(service);
     }
 
@@ -291,19 +325,19 @@ class ApiWebTest {
 
     @Test
     void everyResponseCarriesARequestId() throws Exception {
-        when(service.get("abc1234")).thenReturn(link("abc1234", null));
+        when(service.get(eq("abc1234"), any())).thenReturn(link("abc1234", null));
 
-        mvc.perform(get("/api/v1/links/abc1234"))
+        mvc.perform(get("/api/v1/links/abc1234").with(CLIENT_KEY))
                 .andExpect(header().string(RequestIdFilter.HEADER, matchesPattern("[0-9a-f-]{36}")));
     }
 
     @Test
     void inboundRequestIdIsPropagatedOnlyIfSafe() throws Exception {
-        when(service.get("abc1234")).thenReturn(link("abc1234", null));
+        when(service.get(eq("abc1234"), any())).thenReturn(link("abc1234", null));
 
-        mvc.perform(get("/api/v1/links/abc1234").header(RequestIdFilter.HEADER, "lb-trace-42"))
+        mvc.perform(get("/api/v1/links/abc1234").with(CLIENT_KEY).header(RequestIdFilter.HEADER, "lb-trace-42"))
                 .andExpect(header().string(RequestIdFilter.HEADER, "lb-trace-42"));
-        mvc.perform(get("/api/v1/links/abc1234").header(RequestIdFilter.HEADER, "bad id\nwith newline"))
+        mvc.perform(get("/api/v1/links/abc1234").with(CLIENT_KEY).header(RequestIdFilter.HEADER, "bad id\nwith newline"))
                 .andExpect(header().string(RequestIdFilter.HEADER, matchesPattern("[0-9a-f-]{36}")));
     }
 

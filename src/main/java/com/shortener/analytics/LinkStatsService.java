@@ -3,6 +3,7 @@ package com.shortener.analytics;
 import com.shortener.analytics.ClickRepository.DailyCount;
 import com.shortener.analytics.ClickRepository.Totals;
 import com.shortener.analytics.ClickRepository.WindowSummary;
+import com.shortener.link.Caller;
 import com.shortener.link.InvalidRequestException;
 import com.shortener.link.Link;
 import com.shortener.link.LinkService;
@@ -39,17 +40,17 @@ public class LinkStatsService {
     }
 
     /**
-     * Same visibility rule as {@link LinkService#get}: expired links have stats, deleted or
-     * unknown codes are 404.
+     * Same visibility rule as {@link LinkService#get}: expired and blocked links have stats for
+     * their owner; deleted, unknown and other people's links are 404.
      *
      * @param days window length ending today (UTC), 1 to 365; null = 30
      */
-    public LinkStats stats(String code, Integer days) {
+    public LinkStats stats(String code, Integer days, Caller caller) {
         int window = days == null ? DEFAULT_DAYS : days;
         if (window < 1 || window > MAX_DAYS) {
             throw new InvalidRequestException("days", "must be between 1 and " + MAX_DAYS);
         }
-        Link link = links.get(code);
+        Link link = links.get(code, caller);
 
         LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
         LocalDate first = today.minusDays(window - 1L);

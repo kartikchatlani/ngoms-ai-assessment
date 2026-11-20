@@ -7,6 +7,7 @@ the regression test. Entries are never deleted.
 |---|---|---|---|---|
 | [BUG-001](#bug-001) | 2026-11-18 | 1 | Medium | Fixed |
 | [BUG-002](#bug-002) | 2026-11-19 | 2 | Low | Fixed |
+| [BUG-003](#bug-003) | 2026-11-20 | 3 | Low | Fixed |
 
 ---
 
@@ -49,3 +50,25 @@ the regression test. Entries are never deleted.
 - **Regression tests:** `ClickClassifierTest.scriptedHttpClientsAreBots_regressionBug002`
   (JDK, Apache and OkHttp client strings).
 - **Lesson:** build heuristics from real samples, and put those samples in the test table.
+
+---
+
+## BUG-003
+**Creating an API key without the optional `admin` field returned 400**
+
+- **Found:** 2026-11-20, by `SecurityWebTest.adminCanIssueAKeyAndTheSecretIsReturnedOnce`
+  (before release).
+- **Severity:** Low. Admin API only. `{"name":"marketing"}` was refused; the workaround was to send
+  `"admin": false` explicitly. No security impact: it failed closed.
+- **Symptom:** `POST /api/v1/admin/keys {"name":"marketing"}` returned `400` with no field errors.
+- **Root cause:** the request record declared `boolean admin` (a primitive). A missing property
+  reaches a record constructor as `null`, and Jackson 3 enables
+  `DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES` by default (Jackson 2 did not), so it failed
+  with `MismatchedInputException: Cannot map 'null' into type 'boolean'` before validation ran.
+  Verified in isolation against the project's Jackson version.
+- **Fix:** `Boolean admin` in `AdminController.CreateKeyRequest`, with `isAdmin()` treating null as
+  false.
+- **Regression tests:** `SecurityWebTest.adminCanIssueAKeyAndTheSecretIsReturnedOnce` (sends no
+  `admin` field) and `AbuseIntegrationTest` (every key it issues omits the field).
+- **Lesson:** optional fields in request records should be boxed types with an explicit default.
+  A primitive turns "optional" into "required" without saying so.

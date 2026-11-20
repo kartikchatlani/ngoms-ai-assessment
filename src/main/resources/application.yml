@@ -2,6 +2,10 @@
 spring:
   application:
     name: url-shortener
+  autoconfigure:
+    # Authentication is API keys only (SecurityConfig). Without this, Spring Boot creates an
+    # in-memory "user" with a random password and logs it at startup, which only confuses.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/shortener}
     username: ${DB_USER:shortener}
@@ -50,3 +54,11 @@ app:
     enabled: ${APP_ANALYTICS_ENABLED:true}
     buffer-capacity: ${APP_ANALYTICS_BUFFER_CAPACITY:10000}
     batch-size: 500
+  security:
+    # Bootstrap admin key (ADR-0008). Set it in every real environment; blank = no admin.
+    admin-key: ${APP_ADMIN_KEY:}
+    # Comma-separated proxy IPs whose X-Forwarded-For we trust. Empty = ignore the header (ADR-0009).
+    trusted-proxies: ${APP_TRUSTED_PROXIES:}
+  abuse:
+    anonymous-creates-per-hour: ${APP_ANONYMOUS_CREATES_PER_HOUR:10}
+    key-creates-per-hour: ${APP_KEY_CREATES_PER_HOUR:1000}

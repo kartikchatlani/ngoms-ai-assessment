@@ -29,8 +29,13 @@ class LinkServiceTest {
     private final LinkRepository repository = mock(LinkRepository.class);
     private final CodeGenerator generator = mock(CodeGenerator.class);
     private final LinkService service = new LinkService(repository, generator,
-            new UrlPolicy(TestFixtures.props()), new AliasPolicy(),
+            new UrlPolicy(TestFixtures.props()), new AliasPolicy(), TestFixtures.screener(),
             Clock.fixed(NOW, ZoneOffset.UTC), TestFixtures.props());
+
+    // Phase 3 made the caller a required parameter. These Phase 1 tests are about link rules,
+    // not permissions, so they run as admin (no restrictions, as in Phase 1) or anonymous for
+    // create. Ownership has its own tests in LinkOwnershipTest.
+    private static final Caller ADMIN = Caller.key(99, true);
 
     // ---- create ---------------------------------------------------------------------------
 
@@ -39,7 +44,7 @@ class LinkServiceTest {
         when(generator.generate()).thenReturn("Ab3xY9z");
         when(repository.insertIfCodeAbsent(any())).thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
-        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null));
+        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null), Caller.ANONYMOUS);
 
         assertThat(link.code()).isEqualTo("Ab3xY9z");
         assertThat(link.customAlias()).isFalse();
@@ -53,7 +58,7 @@ class LinkServiceTest {
                 .thenReturn(Optional.empty(), Optional.empty())
                 .thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
-        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null));
+        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null), Caller.ANONYMOUS);
 
         assertThat(link.code()).isEqualTo("free003");
         verify(repository, times(3)).insertIfCodeAbsent(any());
@@ -64,7 +69,7 @@ class LinkServiceTest {
         when(generator.generate()).thenReturn("taken01");
         when(repository.insertIfCodeAbsent(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, null)))
+        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, null), Caller.ANONYMOUS))
                 .isInstanceOf(CodeSpaceExhaustedException.class);
         verify(repository, times(5)).insertIfCodeAbsent(any());
     }
@@ -74,7 +79,7 @@ class LinkServiceTest {
         when(generator.generate()).thenReturn("favicon", "Ok12345");
         when(repository.insertIfCodeAbsent(any())).thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
-        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null));
+        Link link = service.create(new LinkService.CreateCommand("https://example.com", null, null), Caller.ANONYMOUS);
 
         assertThat(link.code()).isEqualTo("Ok12345");
         verify(repository, times(1)).insertIfCodeAbsent(any());
@@ -84,7 +89,7 @@ class LinkServiceTest {
     void createsWithCustomAliasWithoutCallingGenerator() {
         when(repository.insertIfCodeAbsent(any())).thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
-        Link link = service.create(new LinkService.CreateCommand("https://example.com", "my-promo", null));
+        Link link = service.create(new LinkService.CreateCommand("https://example.com", "my-promo", null), Caller.ANONYMOUS);
 
         assertThat(link.code()).isEqualTo("my-promo");
         assertThat(link.customAlias()).isTrue();
@@ -95,14 +100,14 @@ class LinkServiceTest {
     void customAliasConflictIsReportedNotRetried() {
         when(repository.insertIfCodeAbsent(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", "my-promo", null)))
+        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", "my-promo", null), Caller.ANONYMOUS))
                 .isInstanceOf(AliasTakenException.class);
         verify(repository, times(1)).insertIfCodeAbsent(any());
     }
 
     @Test
     void rejectsExpiryInThePastOrNow() {
-        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, NOW)))
+        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, NOW), Caller.ANONYMOUS))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("expiresAt");
         verify(repository, never()).insertIfCodeAbsent(any());
     }
@@ -110,7 +115,7 @@ class LinkServiceTest {
     @Test
     void rejectsExpiryBeyondStorableRange_regressionBug001() {
         Instant tooFar = Instant.parse("+100000-01-01T00:00:00Z");
-        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, tooFar)))
+        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("https://example.com", null, tooFar), Caller.ANONYMOUS))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("expiresAt");
         verify(repository, never()).insertIfCodeAbsent(any());
     }
@@ -121,7 +126,7 @@ class LinkServiceTest {
         when(repository.insertIfCodeAbsent(any())).thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
         assertThatCode(() -> service.create(
-                new LinkService.CreateCommand("https://example.com", null, LinkService.MAX_EXPIRY)))
+                new LinkService.CreateCommand("https://example.com", null, LinkService.MAX_EXPIRY), Caller.ANONYMOUS))
                 .doesNotThrowAnyException();
     }
 
@@ -131,7 +136,7 @@ class LinkServiceTest {
         when(generator.generate()).thenReturn("Ab3xY9z");
         when(repository.insertIfCodeAbsent(any())).thenAnswer(inv -> Optional.of(stored(inv.getArgument(0))));
 
-        service.create(new LinkService.CreateCommand("https://example.com", null, expiry));
+        service.create(new LinkService.CreateCommand("https://example.com", null, expiry), Caller.ANONYMOUS);
 
         ArgumentCaptor<NewLink> captor = ArgumentCaptor.forClass(NewLink.class);
         verify(repository).insertIfCodeAbsent(captor.capture());
@@ -140,7 +145,7 @@ class LinkServiceTest {
 
     @Test
     void invalidUrlNeverReachesTheDatabase() {
-        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("javascript:alert(1)", null, null)))
+        assertThatThrownBy(() -> service.create(new LinkService.CreateCommand("javascript:alert(1)", null, null), Caller.ANONYMOUS))
                 .isInstanceOf(InvalidRequestException.class);
         verify(repository, never()).insertIfCodeAbsent(any());
     }
@@ -178,8 +183,8 @@ class LinkServiceTest {
         when(repository.findByCode("expired")).thenReturn(Optional.of(link("expired", NOW.minusSeconds(1), null)));
         when(repository.findByCode("deleted")).thenReturn(Optional.of(link("deleted", null, NOW.minusSeconds(1))));
 
-        assertThat(service.get("expired").code()).isEqualTo("expired");
-        assertThatThrownBy(() -> service.get("deleted")).isInstanceOf(LinkNotFoundException.class);
+        assertThat(service.get("expired", ADMIN).code()).isEqualTo("expired");
+        assertThatThrownBy(() -> service.get("deleted", ADMIN)).isInstanceOf(LinkNotFoundException.class);
     }
 
     // ---- list ----------------------------------------------------------------------------
@@ -187,9 +192,9 @@ class LinkServiceTest {
     @Test
     void listReturnsCursorWhenMorePagesExist() {
         // Repository returns limit+1 rows (ids 10..8) -> page of 2 plus a cursor pointing below id 9.
-        when(repository.findLivePage(Long.MAX_VALUE, 3)).thenReturn(links(10, 9, 8));
+        when(repository.findLivePage(null, Long.MAX_VALUE, 3)).thenReturn(links(10, 9, 8));
 
-        LinkService.Page page = service.list(null, 2);
+        LinkService.Page page = service.list(null, 2, ADMIN);
 
         assertThat(page.items()).extracting(Link::id).containsExactly(10L, 9L);
         assertThat(page.nextCursor()).isNotNull();
@@ -198,9 +203,9 @@ class LinkServiceTest {
 
     @Test
     void listLastPageHasNoCursor() {
-        when(repository.findLivePage(9L, 3)).thenReturn(links(8, 7));
+        when(repository.findLivePage(null, 9L, 3)).thenReturn(links(8, 7));
 
-        LinkService.Page page = service.list(LinkService.encodeCursor(9), 2);
+        LinkService.Page page = service.list(LinkService.encodeCursor(9), 2, ADMIN);
 
         assertThat(page.items()).hasSize(2);
         assertThat(page.nextCursor()).isNull();
@@ -208,29 +213,28 @@ class LinkServiceTest {
 
     @Test
     void listValidatesLimitAndCursor() {
-        assertThatThrownBy(() -> service.list(null, 0)).isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> service.list(null, 101)).isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> service.list("not-base64!!", 10)).isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> service.list(LinkService.encodeCursor(-5), 10)).isInstanceOf(InvalidRequestException.class);
-        verify(repository, never()).findLivePage(anyLong(), anyInt());
+        assertThatThrownBy(() -> service.list(null, 0, ADMIN)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.list(null, 101, ADMIN)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.list("not-base64!!", 10, ADMIN)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.list(LinkService.encodeCursor(-5), 10, ADMIN)).isInstanceOf(InvalidRequestException.class);
+        verify(repository, never()).findLivePage(any(), anyLong(), anyInt());
     }
 
     // ---- delete --------------------------------------------------------------------------
 
     @Test
     void deleteIsIdempotent() {
-        when(repository.softDelete(eq("abc1234"), any())).thenReturn(false);
+        when(repository.softDelete(eq("abc1234"), any(), any())).thenReturn(false);
         when(repository.findByCode("abc1234")).thenReturn(Optional.of(link("abc1234", null, NOW)));
 
-        assertThatCode(() -> service.delete("abc1234")).doesNotThrowAnyException();
+        assertThatCode(() -> service.delete("abc1234", ADMIN)).doesNotThrowAnyException();
     }
 
     @Test
     void deleteUnknownIsNotFound() {
-        when(repository.softDelete(eq("nope123"), any())).thenReturn(false);
-        when(repository.findByCode("nope123")).thenReturn(Optional.empty());
+                when(repository.findByCode("nope123")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.delete("nope123")).isInstanceOf(LinkNotFoundException.class);
+        assertThatThrownBy(() -> service.delete("nope123", ADMIN)).isInstanceOf(LinkNotFoundException.class);
     }
 
     // ---- helpers -------------------------------------------------------------------------

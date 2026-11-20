@@ -102,11 +102,16 @@ public class RedirectBench {
         return new Result(lat, bad.get());
     }
 
+    /** Anonymous by default; set API_KEY to create with a key (anonymous creates are rate-limited). */
     static String createLink(HttpClient http, String base) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(base + "/api/v1/links"))
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + "/api/v1/links"))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"url\":\"https://example.com/bench\"}"))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofString("{\"url\":\"https://example.com/bench\"}"));
+        String key = System.getenv("API_KEY");
+        if (key != null && !key.isBlank()) {
+            b.header("Authorization", "Bearer " + key);
+        }
+        HttpRequest req = b.build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
         Matcher m = Pattern.compile("\"code\"\\s*:\\s*\"([^\"]+)\"").matcher(res.body());
         if (res.statusCode() != 201 || !m.find()) {

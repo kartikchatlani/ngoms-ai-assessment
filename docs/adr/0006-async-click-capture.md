@@ -51,8 +51,10 @@ So the question is where and when the click gets written.
   would need a durable queue (IMP-017).
 - **Stats are eventually consistent,** normally behind by milliseconds. The API documents this.
 - **The redirect gets no slower per request** (one in-memory offer). The writes still land on the
-  same PostgreSQL, so at saturation there is some throughput cost: about 10% in our single-laptop
-  benchmark, where the app, the DB and the load generator share one machine. In production the
+  same PostgreSQL, so at saturation there is some throughput cost: about 5% in our single-laptop
+  benchmark, where the app, the DB and the load generator share one machine. (The first
+  estimate, from runs taken minutes apart, was about 10%; the side-by-side re-measurement in
+  scenario 2 §3.3 corrected it.) In production the
   remedy is DB capacity, or moving the click store off the primary.
 - **Each instance has its own buffer and writer.** This scales horizontally with no coordination,
   and N instances mean N writers.

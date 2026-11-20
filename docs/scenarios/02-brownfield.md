@@ -161,7 +161,8 @@ generator all share one laptop (Windows, Docker Desktop). Three runs each, taken
 **Reading it honestly:**
 - Median latency is essentially unchanged and p99 is within run-to-run noise in both directions. The
   request-thread cost is one in-memory offer.
-- Throughput at saturation dropped about 10%, and p95 rose by about 1–2 ms. The cause is not the
+- Throughput at saturation dropped about 10%, and p95 rose by about 1–2 ms (*both overstated: see
+  the side-by-side re-measurement below, about 5% and +0.3 ms*). The cause is not the
   redirect code. At ~8,000 redirects/s the writer is also inserting ~8,000 rows/s into **the same
   PostgreSQL on the same laptop**, competing for the same CPU. That is the real cost of storing
   every click. In production it is paid in DB capacity, and the remedies are in ADR-0006 and
@@ -170,6 +171,26 @@ generator all share one laptop (Windows, Docker Desktop). Three runs each, taken
   warmup), and `shortener.clicks{outcome=dropped_*}` stayed at 0.
 - These are single-machine numbers. They compare before with after; they are not a capacity
   figure (IMP-009 remains open for a proper load test).
+
+**Re-measured side by side (during Phase 3).** The table above compares runs taken minutes apart,
+on different containers. Phase 3 showed that this method can overstate a change's cost several
+times over ([scenario 3 §3.5](03-ambiguous.md)). So I re-measured: the Phase 1 and Phase 2 releases,
+built from their commits, ran **at the same time against the same database**, in 6 rounds with
+rotated run order.
+
+| Build | Throughput, median (range) | p50 | p95 | p99 |
+|---|---|---|---|---|
+| Phase 1 | 8,913 req/s (8,458 – 9,463) | 2.09 ms | 5.11 ms | 24.1 ms |
+| Phase 2 | 8,433 req/s (8,171 – 8,762) | 2.00 ms | 5.39 ms | 30.3 ms |
+
+*Medians over 6 rounds.*
+
+The corrected figures:
+- **Throughput:** about **5% lower**, not about 10%.
+- **Median latency:** unchanged (2.09 → 2.00 ms, within noise).
+- **p95:** up about 0.3 ms, not 1–2 ms.
+- **The conclusion stands:** the per-redirect cost is negligible, and the remaining cost is the click
+  inserts sharing the database.
 
 ### 3.4 Operational validation on the running stack
 **In-place upgrade, keeping the existing data.** The Phase 1 stack had been running with 9 links

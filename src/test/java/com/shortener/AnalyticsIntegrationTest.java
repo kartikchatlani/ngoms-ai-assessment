@@ -16,6 +16,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,9 +35,14 @@ import tools.jackson.databind.json.JsonMapper;
  * asynchronous write deterministic without sleeps.
  */
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "app.base-url=http://sho.rt")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "app.base-url=http://sho.rt",
+        // Phase 3: stats need the owner's key; abuse controls are tested in AbuseIntegrationTest.
+        "app.security.admin-key=" + AnalyticsIntegrationTest.ADMIN_KEY,
+        "app.abuse.key-creates-per-hour=1000000"})
 class AnalyticsIntegrationTest {
+
+    static final String ADMIN_KEY = "sk_integration_test_admin_key";
 
     private static final String CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
     private static final String IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148";
@@ -58,6 +64,18 @@ class AnalyticsIntegrationTest {
     JdbcClient jdbc;
 
     private final HttpClient http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+
+    /** Phase 3: each test creates links with its own client key and reads their stats with it. */
+    private String key;
+
+    @BeforeEach
+    void issueKey() throws Exception {
+        var res = http.send(HttpRequest.newBuilder(uri("/api/v1/admin/keys"))
+                .header("Content-Type", "application/json").header("Authorization", "Bearer " + ADMIN_KEY)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"analytics\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        key = json.readTree(res.body()).get("key").asString();
+    }
 
     @Test
     void redirectsAreCountedAndBrokenDown() throws Exception {
@@ -170,6 +188,7 @@ class AnalyticsIntegrationTest {
     private String create(String url) throws Exception {
         var res = http.send(HttpRequest.newBuilder(uri("/api/v1/links"))
                 .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + key)
                 .POST(HttpRequest.BodyPublishers.ofString("{\"url\":\"" + url + "\"}"))
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertThat(res.statusCode()).isEqualTo(201);
@@ -193,6 +212,12 @@ class AnalyticsIntegrationTest {
         }
         // The JDK client sends "Java-http-client/21" by default, which we classify as BOT.
         b.header("User-Agent", userAgent == null ? "" : userAgent);
+        // Visitors following a redirect have no key; management calls use the owner's.
+        if (path.startsWith("/api/")) {
+            b.header("Authorization", "Bearer " + key);
+        } else if (path.startsWith("/actuator/metrics")) {
+            b.header("Authorization", "Bearer " + ADMIN_KEY); // metrics are admin-only since Phase 3
+        }
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 

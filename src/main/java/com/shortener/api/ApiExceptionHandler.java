@@ -1,5 +1,9 @@
 package com.shortener.api;
 
+import com.shortener.abuse.InvalidDomainException;
+import com.shortener.abuse.RateLimitedException;
+import com.shortener.abuse.UrlNotAllowedException;
+import com.shortener.auth.ApiKeyNotFoundException;
 import com.shortener.link.AliasTakenException;
 import com.shortener.link.CodeSpaceExhaustedException;
 import com.shortener.link.InvalidRequestException;
@@ -52,6 +56,33 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AliasTakenException.class)
     ProblemDetail aliasTaken(AliasTakenException ex) {
         return problem(HttpStatus.CONFLICT, "Alias already taken", ex.getMessage(), "ALIAS_TAKEN");
+    }
+
+    /** Same body for every screening rule, so the response can't be used to probe the blocklist (ADR-0010). */
+    @ExceptionHandler(UrlNotAllowedException.class)
+    ProblemDetail urlNotAllowed(UrlNotAllowedException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "Destination not allowed", ex.getMessage(), "URL_NOT_ALLOWED");
+        pd.setProperty("errors", List.of(Map.of("field", "url", "message", ex.getMessage())));
+        return pd;
+    }
+
+    @ExceptionHandler(RateLimitedException.class)
+    ResponseEntity<ProblemDetail> rateLimited(RateLimitedException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.retryAfterSeconds()))
+                .body(problem(HttpStatus.TOO_MANY_REQUESTS, "Too many requests", ex.getMessage(), "RATE_LIMITED"));
+    }
+
+    @ExceptionHandler(ApiKeyNotFoundException.class)
+    ProblemDetail keyNotFound(ApiKeyNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, "API key not found", ex.getMessage(), "KEY_NOT_FOUND");
+    }
+
+    @ExceptionHandler(InvalidDomainException.class)
+    ProblemDetail invalidDomain(InvalidDomainException ex) {
+        ProblemDetail pd = problem(HttpStatus.BAD_REQUEST, "Invalid request", ex.getMessage(), "INVALID_REQUEST");
+        pd.setProperty("errors", List.of(Map.of("field", "domain", "message", ex.getMessage())));
+        return pd;
     }
 
     @ExceptionHandler(CodeSpaceExhaustedException.class)

@@ -13,3 +13,6 @@ so the history of the reasoning is preserved.
 | [0005](0005-api-design.md) | API conventions: versioning, Problem Details, keyset pagination, no dedupe | Accepted | 2026-11-18 | 2026-11-18 |
 | [0006](0006-async-click-capture.md) | Capture clicks asynchronously, off the redirect path | Accepted | 2026-11-19 | 2026-11-19 |
 | [0007](0007-analytics-data-model-and-rollout.md) | Analytics data model, privacy, and a rollback-safe migration | Accepted | 2026-11-19 | 2026-11-19 |
+| [0008](0008-api-keys-and-ownership.md) | API keys and link ownership | Accepted | 2026-11-20 | 2026-11-20 |
+| [0009](0009-rate-limiting.md) | Rate-limit link creation per key and per IP | Accepted | 2026-11-20 | 2026-11-20 |
+| [0010](0010-url-screening-and-takedown.md) | URL screening and admin takedown | Accepted | 2026-11-20 | 2026-11-20 |

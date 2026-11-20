@@ -10,7 +10,6 @@
 
 ## 1. Decomposition
 
-I first split the problem into *what must be true* before deciding *how*.
 
 ### 1.1 Requirements → capabilities
 | Requirement (stated or implied) | Capability | Where |

@@ -4,9 +4,12 @@ import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
-@EnableConfigurationProperties({AppProperties.class, AnalyticsProperties.class})
+@EnableScheduling // blocklist refresh, rate-limit bucket cleanup (Phase 3)
+@EnableConfigurationProperties({AppProperties.class, AnalyticsProperties.class, SecurityProperties.class,
+        AbuseProperties.class})
 public class AppConfig {
 
     /**

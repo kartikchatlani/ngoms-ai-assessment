@@ -9,9 +9,8 @@ to the "Done" table with the phase that delivered it.
 
 | ID | Added | Priority | Improvement | Why / notes |
 |---|---|---|---|---|
-| IMP-001 | 2026-11-18 | P1 | Authentication and link ownership | Today anyone can delete anyone's link. Candidate for Phase 3 |
-| IMP-002 | 2026-11-18 | P1 | Rate limiting on create (per client) | Spam and resource exhaustion. Token bucket in Redis or at the gateway |
-| IMP-003 | 2026-11-18 | P1 | Malicious-URL screening (e.g. Safe Browsing API, domain blocklist) | Shorteners are a favourite phishing tool. Our domain's reputation is at stake |
+| IMP-002 | 2026-11-18 | P1 | Shared rate-limit state (Redis) for more than one instance | Phase 3 added per-instance in-memory limits (ADR-0009); with N instances the effective limit is N times higher. Needed before scaling out |
+| IMP-003 | 2026-11-18 | P1 | Proactive malicious-URL screening (Google Safe Browsing / Web Risk) | Phase 3 added a reactive admin blocklist and takedown (ADR-0010). Needs a vendor and privacy decision; plugs in next to `UrlScreener` |
 | IMP-004 | 2026-11-18 | P1 | CI pipeline (GitHub Actions: `./mvnw verify` with Docker for Testcontainers) | Integration tests must run on every change, not only on a dev box |
 | IMP-005 | 2026-11-18 | P2 | Redirect cache (Caffeine in-process and/or Redis) | Every redirect is a DB query today. Add after a load-test baseline so the gain is measured |
 | IMP-006 | 2026-11-18 | P2 | `Idempotency-Key` header on create | Safe client retries without the info leak of URL dedupe (ADR-0005) |
@@ -30,9 +29,14 @@ to the "Done" table with the phase that delivered it.
 | IMP-019 | 2026-11-19 | P3 | `tz` parameter on stats (daily buckets in the caller's time zone) | Days are UTC only today |
 | IMP-020 | 2026-11-19 | P2 | Zero-downtime deploys: two or more app instances behind a load balancer, rolling restart | Local compose has one instance, so a deploy is a few seconds of downtime. The schema side is already rolling-deploy safe (expand-only) |
 | IMP-021 | 2026-11-19 | P3 | `trackingSince` in stats for links created before Phase 2 | "0 clicks" and "created before tracking existed" currently look the same |
+| IMP-022 | 2026-11-20 | P2 | Self-service keys or an identity provider (OIDC) | Every key goes through an admin today (ADR-0008). Fine for known teams, not for public developers |
+| IMP-023 | 2026-11-20 | P3 | Rate-limit IPv6 clients by /64 prefix | One IPv6 client can rotate through many addresses in its /64 (ADR-0009) |
+| IMP-024 | 2026-11-20 | P2 | Public "report this link" endpoint feeding an admin review queue | Phishing reports arrive by email today. Needs its own abuse protection |
+| IMP-025 | 2026-11-20 | P3 | Bulk assignment of ownerless links (by URL pattern or alias prefix) | One `PUT` per link today; fine for a handful of campaign links (scenario 3, Q7) |
+| IMP-026 | 2026-11-20 | P3 | Push blocklist changes to other instances (pub/sub) instead of a 30 s refresh | Only matters with several instances and a need for instant takedown |
 
 ## Done
 
-| ID | Done | Phase | Notes |
-|---|---|---|---|
-| none yet | | | |
+| ID | Phase | Notes |
+|---|---|---|
+| IMP-001 | 3 | API keys and per-key link ownership; others' links are 404 ([ADR-0008](adr/0008-api-keys-and-ownership.md)) |
