@@ -21,7 +21,7 @@ people use most, must not be limited at all.
 | CAPTCHA on create | Stops simple bots | Friction for every normal user; doesn't work for API clients |
 | Limit at the load balancer / CDN | Protects everything, including redirects | No such layer in this deployment; can't tell keys apart without app knowledge |
 
-## Decision
+## Decision (KC)
 - **Token bucket:** capacity = hourly allowance, refilled continuously. Anonymous: **10 per hour
   per client IP**. API key: **1,000 per hour per key**. Admin keys: unlimited. All values are
   configuration (`APP_ANONYMOUS_CREATES_PER_HOUR`, `APP_KEY_CREATES_PER_HOUR`).

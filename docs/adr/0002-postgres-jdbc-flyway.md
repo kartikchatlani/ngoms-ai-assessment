@@ -27,7 +27,7 @@ claim the same code), and schema evolution that works on a live system (for the 
 **Migrations:** Flyway (versioned SQL files, run on startup) vs Liquibase (XML/YAML changelogs).
 Flyway chosen: plain SQL, simpler, and Boot auto-configures it.
 
-## Decision
+## Decision (KC)
 PostgreSQL 17, accessed with `JdbcClient`, schema owned by Flyway (`src/main/resources/db/migration`).
 The application never runs DDL by itself (no `ddl-auto`).
 

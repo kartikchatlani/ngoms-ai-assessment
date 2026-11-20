@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Created:** 2026-11-18
 - **Accepted:** 2026-11-18
+- **Amended by:** [ADR-0010](0010-url-screening-and-takedown.md): a third case for 410. A link taken
+  down by an admin, or whose domain is blocklisted, returns `410 LINK_BLOCKED` (status `BLOCKED`).
 
 ## Context
 `GET /{code}` is the hot path and the core functionality of the service. The status code we choose controls
@@ -15,7 +17,7 @@ caching, whether deletes and expiry actually take effect, and whether we can cou
 | **302 Found** | Not cached by default; every click hits us | **Chosen** |
 | 307 / 308 | Preserve the method (POST stays POST) | Unnecessary: link clicks are GETs; 302 has the widest compatibility |
 
-## Decision
+## Decision (KC)
 - **302 + `Cache-Control: no-store`.** Correctness (deletes and expiry take effect immediately) and
   observability outweigh the extra traffic. Server-side caching (a later phase) absorbs the load instead.
 - **Unknown code gives 404; expired or deleted code gives 410 Gone.** 410 tells crawlers and clients the link

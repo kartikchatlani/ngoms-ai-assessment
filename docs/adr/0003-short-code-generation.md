@@ -17,7 +17,7 @@ can be guessed, whether multiple instances must coordinate, and what happens on 
 | Snowflake-style IDs | Time + worker + seq | Coordination-free | Long (11+ chars); time-ordered, so partially guessable |
 | **Random base62 from a CSPRNG + retry on conflict** | `SecureRandom` | Unguessable, stateless, coordination-free across instances | Small, retryable collision probability |
 
-## Decision
+## Decision (KC)
 - 7 characters from `[0-9A-Za-z]` drawn with `SecureRandom.nextInt(62)` (unbiased).
   62^7 is about **3.52 × 10^12** codes.
 - Insert with `INSERT ... ON CONFLICT (code) DO NOTHING RETURNING ...`. An empty result

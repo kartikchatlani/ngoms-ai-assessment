@@ -36,7 +36,7 @@ production links. The brownfield constraints are:
 | Add `clickCount` to the existing `LinkResponse` | One call for clients | Changes an existing contract; makes `GET` and `list` run aggregation queries for clients who never asked; list would be N aggregations per page |
 | **New endpoint `GET /api/v1/links/{code}/stats?days=N`** | Purely additive; cost is paid only by callers who want stats | One extra call for clients who want both |
 
-## Decision
+## Decision (KC)
 - **Raw events** in `click_events (id, link_id → links.id, clicked_at, referrer_host, agent_class)`,
   with index `(link_id, clicked_at)` that serves every stats query. A `CHECK` constrains
   `agent_class`, and a foreign key to `links` is safe because links are never hard-deleted (ADR-0004).

@@ -14,6 +14,8 @@ its alternatives and rationale.
 
 ## Quick start
 
+Step-by-step guide (clone, run, use, analytics, testing, troubleshooting): [docs/SETUP.md](docs/SETUP.md).
+
 ### Option A: Docker (recommended; needs only Docker Desktop)
 ```bash
 docker compose up --build
@@ -160,6 +162,7 @@ normally within milliseconds.
 ## Documentation map
 | Document | What's in it |
 |---|---|
+| [Setup and usage guide](docs/SETUP.md) | Clone, run, use the API and analytics, test, troubleshoot |
 | [Engineering summary](docs/ENGINEERING-SUMMARY.md) | **Start here:** plan, decisions, validation, assumptions, risks and limitations on one page |
 | [Architecture overview](docs/architecture.md) | Components, data model, request flows, reliability properties |
 | [Decision records (ADRs)](docs/adr/README.md) | Every significant decision with the options considered |

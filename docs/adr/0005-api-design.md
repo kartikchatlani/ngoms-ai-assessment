@@ -3,12 +3,16 @@
 - **Status:** Accepted
 - **Created:** 2026-11-18
 - **Accepted:** 2026-11-18
+- **Amended by:** [ADR-0008](0008-api-keys-and-ownership.md): management endpoints (get, list,
+  delete, stats) now require an API key; list returns only the caller's links; a link the caller
+  doesn't own is 404; unmatched paths are 401/403 instead of 404. The conventions themselves
+  (versioning, Problem Details, keyset pagination, no dedupe) are unchanged.
 
 ## Context
 The management API will be consumed by other programs, so its failure modes and evolution
 must be predictable.
 
-## Decisions
+## Decisions (KC)
 
 ### 1. URI versioning: `/api/v1/...`
 **Options:** URI prefix, custom media type (`Accept: application/vnd...v1+json`), or a header.

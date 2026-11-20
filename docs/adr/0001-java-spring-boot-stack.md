@@ -17,7 +17,7 @@ production, all of which can be done in Java. The team uses Java, so I chose it.
 | Quarkus / Micronaut | Faster startup, native images | Less common in the target environment; startup time does not matter for a long-running service |
 | Plain Javalin/Jetty | Minimal | Re-implementing health, config, validation, error handling = more code, more bugs |
 
-## Decision
+## Decision (KC)
 - **Java 21 (LTS):** long-term support; records for immutable DTOs and domain objects; virtual
   threads for cheap blocking I/O. Also small conveniences such as sequenced collections
   (`List.getLast()`), used for pagination cursors.

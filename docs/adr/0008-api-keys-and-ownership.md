@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Created:** 2026-11-20
 - **Accepted:** 2026-11-20
+- **Amends:** [ADR-0005](0005-api-design.md): adds authentication and ownership to the management
+  API it defined. This is an intentional breaking change (see Consequences).
 
 ## Context
 Scenario 3, symptom 3: a marketing campaign link was deleted, and nobody on the team did it. In
@@ -27,7 +29,7 @@ in one place, and adds security headers (`X-Content-Type-Options`, `X-Frame-Opti
 is configuration that has to be understood, and some test wiring (every web-slice test now
 imports `SecurityConfig`).
 
-## Decision
+## Decision (KC)
 - **Keys:** `sk_` + 32 base62 characters from `SecureRandom` (about 190 bits). Sent as
   `Authorization: Bearer <key>`. Issued and revoked by an admin through `/api/v1/admin/keys`. The
   secret appears **once**, in the create response.

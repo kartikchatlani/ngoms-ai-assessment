@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Created:** 2026-11-20
 - **Accepted:** 2026-11-20
+- **Amends:** [ADR-0004](0004-redirect-semantics.md): adds "blocked" as a third reason for
+  `410 Gone`, alongside expired and deleted.
 
 ## Context
 Scenario 3, symptom 1: Chrome showed a "deceptive site ahead" warning on one of our short links,
@@ -24,7 +26,7 @@ every submitted URL to a third party is a privacy decision for someone else to m
 | Interstitial warning page before redirecting | Users see the destination first | Friction on every click for everyone: violates the request's main constraint |
 | Fetch the destination and inspect it | Can catch fresh phishing pages | SSRF risk, slow, easy to cloak; a project of its own |
 
-## Decision
+## Decision (KC)
 - **`UrlScreener`** (in-memory, refreshed from the `blocked_domains` table):
   - **Blocked domains:** a blocked domain blocks itself and every subdomain (`evil.example` blocks
     `login.evil.example`) but not lookalikes (`notevil.example`). Matching is by DNS label, after

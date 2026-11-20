@@ -3,6 +3,9 @@
 - **Status:** Accepted
 - **Created:** 2026-11-19
 - **Accepted:** 2026-11-19
+- **Correction:** the throughput cost under Consequences was revised from about 10% to about 5%,
+  after a side-by-side re-measurement ([scenario 2 §3.3](../scenarios/02-brownfield.md)). The
+  decision is unchanged.
 
 ## Context
 Phase 2 adds click analytics to a service that is already running. The redirect (`GET /{code}`) is
@@ -22,7 +25,7 @@ So the question is where and when the click gets written.
 | Transactional outbox | Exactly-once with the business write | There is no business write on a redirect to attach it to; it would turn every read into a write |
 | Parse access logs offline | Zero runtime cost | Needs a log pipeline; stats delayed by minutes to hours; awkward to test |
 
-## Decision
+## Decision (KC)
 **In-process bounded queue with a single background writer** (`ClickRecorder`):
 
 - **Redirect side:** the request thread classifies the request (referrer host, agent class; see

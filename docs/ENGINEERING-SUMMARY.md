@@ -3,7 +3,7 @@
 - **Created:** 2026-11-20
 - **Scope:** a production-style URL shortener in Java 21 / Spring Boot 4 / PostgreSQL, built in
   three stages. Each stage is documented as decomposition → execution → validation.
-- **Run it:** `docker compose up --build`, then `bash ./scripts/smoke-test.sh` ([README](../README.md#quick-start)).
+- **Run it:** `docker compose up --build`, then `bash ./scripts/smoke-test.sh`. Full guide: [SETUP.md](SETUP.md).
 
 ---
 
