@@ -24,7 +24,7 @@ scenario docs behind it.
 - **Metrics:** `shortener.ratelimit.rejected{tier}`.
 - **Tests:** +53 unit, +16 web-slice, +13 integration (`AbuseIntegrationTest` reproduces each
   symptom; V2→V4 upgrade and rollback in `MigrationUpgradeTest`). Smoke test: 31 checks.
-- **Docs:** [setup and usage guide](docs/SETUP.md), [engineering summary](docs/ENGINEERING-SUMMARY.md), ADR-0008 to ADR-0010, [ambiguous scenario](docs/scenarios/03-ambiguous.md); architecture,
+- **Docs:** [setup and usage guide](SETUP.md), [engineering summary](docs/ENGINEERING-SUMMARY.md), ADR-0008 to ADR-0010, [ambiguous scenario](docs/scenarios/03-ambiguous.md); architecture,
   testing, limitations and README updated; IMP-022 to IMP-026.
 
 ### Changed (breaking, intentional)

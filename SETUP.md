@@ -136,7 +136,7 @@ Every error is JSON with a stable `errorCode`, for example:
 | `LINK_EXPIRED` / `LINK_DELETED` / `LINK_BLOCKED` | 410 | The link existed but no longer works |
 | `RATE_LIMITED` | 429 | Too many creates; see `Retry-After` |
 
-Every endpoint is listed in [architecture.md §5](architecture.md#5-api-summary).
+Every endpoint is listed in [architecture.md §5](docs/architecture.md#5-api-summary).
 
 ## 6. Use the analytics
 
@@ -213,7 +213,7 @@ java scripts/RedirectBench.java http://localhost:8080 20000 32    # requests, co
 It creates one link per run. Without a key, that counts against the anonymous limit; set
 `API_KEY=<client key>` to avoid it.
 
-How the tests are organised: [testing.md](testing.md).
+How the tests are organised: [testing.md](docs/testing.md).
 
 ## 8. Configuration
 
@@ -228,7 +228,7 @@ Settings are environment variables with local defaults. To change one, add it un
 | `APP_ANALYTICS_ENABLED` | `true` | Click-recording kill switch |
 | `APP_TRUSTED_PROXIES` | *(none)* | Only set this behind a reverse proxy |
 
-The full list is in the [README](../README.md#configuration).
+The full list is in the [README](README.md#configuration).
 
 ## 9. Troubleshooting
 
